@@ -284,7 +284,7 @@ namespace Oxide.Plugins
                     return GetUses(name) >= limit;
                 }
 
-                return true;
+                return false;
             }
             
             public void OnClaimed(DropConfig dropConfig)
