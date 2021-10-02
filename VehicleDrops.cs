@@ -9,7 +9,7 @@ using VLB;
 
 namespace Oxide.Plugins
 {
-    [Info("VehicleDrops", "Bazz3l", "1.1.2")]
+    [Info("VehicleDrops", "Bazz3l", "1.1.3")]
     [Description("This plugin allows you to spawn in vehicles by throwing down a custom supply signal.")]
     public class VehicleDrops : CovalencePlugin
     {
@@ -229,6 +229,7 @@ namespace Oxide.Plugins
         void ClearData()
         {
             _storage.Players.Clear();
+            
             SaveData();
         }
         
@@ -257,35 +258,43 @@ namespace Oxide.Plugins
             
             public float GetCooldown(string name)
             {
-               DropData dropData;
+                DropData dropData;
 
-                if (!DropData.TryGetValue(name, out dropData))
+                if (DropData.TryGetValue(name, out dropData) && dropData.Cooldown > 0)
                 {
-                    return 0f;
+                    float currentTime = Time.time;
+                    
+                    return currentTime > dropData.Cooldown ? 0f : dropData.Cooldown - currentTime;
                 }
 
-                float currentTime = Time.time;
-
-                return currentTime > dropData.Cooldown ? 0f : dropData.Cooldown - currentTime;
+                return 0f;
             }
-            
-            public bool HasReachedLimit(string name, int limit) => limit > 0 && GetUses(name) >= limit;
-            
+
             public int GetUses(string name)
             {
-               DropData dropData;
+                DropData dropData;
 
                 return !DropData.TryGetValue(name, out dropData) ? 0 : dropData.Uses;
             }
 
+            public bool HasLimit(string name, int limit)
+            {
+                if (limit > 0)
+                {
+                    return GetUses(name) >= limit;
+                }
+
+                return true;
+            }
+            
             public void OnClaimed(DropConfig dropConfig)
             {
                DropData dropData;
 
-                if (!DropData.TryGetValue(dropConfig.Name, out dropData))
-                {
-                    DropData[dropConfig.Name] = dropData = new DropData();
-                }
+               if (!DropData.TryGetValue(dropConfig.Name, out dropData))
+               {
+                   DropData[dropConfig.Name] = dropData = new DropData();
+               }
 
                 dropData.OnClaimed(dropConfig.Cooldown);
             }
@@ -408,13 +417,13 @@ namespace Oxide.Plugins
             
             PlayerData playerData = _storage.FindPlayerData(player);
 
-            if (playerData.HasReachedLimit(dropConfig.Name, dropConfig.Limit))
+            if (playerData.HasLimit(dropConfig.Name, dropConfig.Limit))
             {
                 MessagePlayer(player, "Message.Limit");
                 return;
             }
             
-            if (playerData.GetCooldown(dropConfig.Name) > 0)
+            if (playerData.GetCooldown(dropConfig.Name) > 0f)
             {
                 MessagePlayer(player, "Message.Cooldown", FormatTime(playerData.GetCooldown(dropConfig.Name)));
                 return;
