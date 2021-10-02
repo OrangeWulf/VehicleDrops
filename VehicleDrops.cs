@@ -10,7 +10,7 @@ using VLB;
 namespace Oxide.Plugins
 {
     [Info("VehicleDrops", "Bazz3l", "1.1.0")]
-    [Description("")]
+    [Description("Spawn vehicles by throwing down a custom vehicle supply signal.")]
     public class VehicleDrops : CovalencePlugin
     {
         #region Fields
