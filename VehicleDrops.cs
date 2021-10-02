@@ -1,12 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
 using Newtonsoft.Json;
+using Oxide.Plugins.VehicleDropEx;
+using Oxide.Core;
+using Oxide.Core.Libraries.Covalence;
 using UnityEngine;
 using VLB;
 
 namespace Oxide.Plugins
 {
-    [Info("VehicleDrops", "Bazz3l", "1.0.0")]
+    [Info("VehicleDrops", "Bazz3l", "1.1.0")]
     [Description("")]
     public class VehicleDrops : CovalencePlugin
     {
@@ -32,6 +35,7 @@ namespace Oxide.Plugins
             "Deployed");
         
         private PluginConfig _config;
+        private PluginData _storage;
         
         private enum DropType
         {
@@ -72,34 +76,80 @@ namespace Oxide.Plugins
 
         class PluginConfig
         {
-            public Dictionary<ulong, DropConfig> DropConfigs = new Dictionary<ulong, DropConfig>();
+            public HashSet<DropConfig> DropConfigs = new HashSet<DropConfig>();
 
+            [JsonIgnore]
+            public readonly Dictionary<string, DropConfig> DropTypesByName = new Dictionary<string, DropConfig>();
+            
+            [JsonIgnore]
+            public readonly Dictionary<ulong, DropConfig> DropTypesBySkin = new Dictionary<ulong, DropConfig>();
+            
             public static PluginConfig DefaultConfig()
             {
                 return new PluginConfig
                 {
-                    DropConfigs = new Dictionary<ulong, DropConfig>
+                    DropConfigs = new HashSet<DropConfig>
                     {
-                        { 2144547783, new DropConfig("Scrap Helicopter", DropType.ScrapHelicopter) },
-                        { 2144524645, new DropConfig("Minicopter", DropType.Minicopter) },
-                        { 2144555007, new DropConfig("Row Boat", DropType.Boat) },
-                        { 2144558893, new DropConfig("Rhib", DropType.Rhib) }
+                        new DropConfig("Scrap", 2144547783, DropType.ScrapHelicopter),
+                        new DropConfig("Mini", 2144524645, DropType.Minicopter),
+                        new DropConfig("Boat", 2144555007, DropType.Boat),
+                        new DropConfig("Rhib", 2144558893, DropType.Rhib)
                     }
                 };
+            }
+
+            public void RegisterDrops()
+            {
+                foreach (DropConfig drop in DropConfigs)
+                {
+                    DropTypesByName.Add(drop.Name, drop);
+                    DropTypesBySkin.Add(drop.SkinID, drop);
+                }
+            }
+            
+            public DropConfig FindDropByName(string name)
+            {
+                DropConfig dropConfig;
+
+                return DropTypesByName.TryGetValue(name, out dropConfig) ? dropConfig : null;
+            }
+            
+            public DropConfig FindDropBySkin(ulong skin)
+            {
+                DropConfig dropConfig;
+
+                return DropTypesBySkin.TryGetValue(skin, out dropConfig) ? dropConfig : null;
             }
         }
 
         class DropConfig
         {
-            public string DisplayName;
+            public string Name;
             public DropType DropType;
+            public float Cooldown;
+            public int Limit;
+            public ulong SkinID;
 
-            public DropConfig(string displayName, DropType dropType)
+            public DropConfig(string name, ulong skinID, DropType dropType)
             {
-                DisplayName = displayName;
+                Name = name;
                 DropType = dropType;
+                SkinID = skinID;
+                Limit = 5;
+                Cooldown = 600f;
             }
 
+            public bool CreateSupply(BasePlayer player)
+            {
+                Item item = ItemManager.CreateByName("supply.signal", 1, SkinID);
+
+                if (item == null) return false;
+                
+                player.GiveItem(item);
+
+                return true;
+            }
+            
             public void CreateEntity(Vector3 position)
             {
                 switch (DropType)
@@ -122,32 +172,149 @@ namespace Oxide.Plugins
             }
         }
 
-        DropConfig FindDropConfig(ulong skinID)
-        {
-            DropConfig dropConfig;
-
-            return _config.DropConfigs.TryGetValue(skinID, out dropConfig) ? dropConfig : null;
-        }
-
         #endregion
 
+        #region Storage
+
+        void LoadDefaultData() => _storage = new PluginData();
+
+        void LoadData()
+        {
+            try
+            {
+                _storage = Interface.Oxide.DataFileSystem.ReadObject<PluginData>(Name);
+
+                if (_storage == null)
+                {
+                    throw new JsonException();
+                }
+            }
+            catch (Exception exception)
+            {
+                PrintWarning("Loaded default data.");
+
+                LoadDefaultData();
+            }
+        }
+
+        void ClearData()
+        {
+            _storage.Players.Clear();
+            SaveData();
+        }
+        
+        void SaveData() => Interface.Oxide.DataFileSystem.WriteObject(Name, _storage);
+
+        class PluginData
+        {
+            public Hash<ulong, PlayerData> Players = new Hash<ulong, PlayerData>();
+
+            public PlayerData FindPlayerData(BasePlayer player)
+            {
+                PlayerData playerData;
+
+                if (!Players.TryGetValue(player.userID, out playerData))
+                {
+                    Players[player.userID] = playerData = new PlayerData();
+                }
+
+                return playerData;
+            }
+        }
+
+        class PlayerData
+        {
+            public Hash<string, DropData> DropData = new Hash<string, DropData>();
+            
+            public float GetCooldown(string name)
+            {
+               DropData dropData;
+
+                if (!DropData.TryGetValue(name, out dropData))
+                {
+                    return 0f;
+                }
+
+                float currentTime = Time.time;
+
+                return currentTime > dropData.Cooldown ? 0f : dropData.Cooldown - currentTime;
+            }
+            
+            public bool HasReachedLimit(string name, int limit) => limit > 0 && GetUses(name) >= limit;
+            
+            public int GetUses(string name)
+            {
+               DropData dropData;
+
+                return !DropData.TryGetValue(name, out dropData) ? 0 : dropData.Uses;
+            }
+
+            public void OnClaimed(DropConfig dropConfig)
+            {
+               DropData dropData;
+
+                if (!DropData.TryGetValue(dropConfig.Name, out dropData))
+                {
+                    DropData[dropConfig.Name] = dropData = new DropData();
+                }
+
+                dropData.OnClaimed(dropConfig.Cooldown);
+            }
+        }
+
+        class DropData
+        {
+            public int Uses;
+            public float Cooldown;
+            
+            public void OnClaimed(float seconds)
+            {
+                Uses++;
+                Cooldown = Time.time + seconds;
+            }
+        }
+        
+        #endregion
+        
         #region Lang
 
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(new Dictionary<string, string>
             {
-                { "MessagePrefix", "</color><color=#03cffc>VehicleDrops</color>: " },
-                { "MessageDropped", "<color=#e2e2e2></color><color=#03cffc>{0}</color> has been dropped at your location.</color>" }
+                { "Message.Prefix", "</color><color=#03cffc>VehicleDrops</color>: " },
+                { "Message.Syntax", "<color=#e2e2e2>Invalid syntax, /vdrop <type>\n{0}.</color>" },
+                { "Message.Limit", "<color=#e2e2e2>Sorry, limit reached.</color>" },
+                { "Message.Dropped", "<color=#e2e2e2></color><color=#03cffc>{0}</color> has been dropped at your location.</color>" },
+                { "Message.Cooldown", "<color=#e2e2e2>Sorry, you are on cooldown <color=#ffc55c>{0}</color>.</color>" },
+                { "Message.Give", "<color=#e2e2e2>You received a <color=#ffc55c>{0}</color>.</color>" },
+                { "Error.Failed", "<color=#e2e2e2>Failed to give <color=#ffc55c>{0}</color>.</color>" },
+                { "Error.NotFound", "<color=#e2e2e2>Failed to find drop.</color>" }
             }, this);
         }
+        
+        void MessagePlayer(BasePlayer player, string key, params object[] args)
+            => MessagePlayer(player.IPlayer, key, args);
 
-        string GetLang(string key, string id = null, params object[] args) =>
-            lang.GetMessage("MessagePrefix", this, id) + string.Format(lang.GetMessage(key, this, id), args);
+        void MessagePlayer(IPlayer player, string key, params object[] args)
+            => player?.Reply(lang.GetMessage("Message.Prefix", this, player.Id ?? null) + string.Format(lang.GetMessage(key, this, player.Id ?? null), args));
 
         #endregion
         
         #region Oxide
+
+        void OnServerInitialized()
+        {
+            AddCovalenceCommand("vdrop", nameof(GiveCommand));
+            
+            LoadData();
+            
+            _config.RegisterDrops();
+        }
+
+        void Unload() => SaveData();
+
+        void OnNewSave(string filename) => ClearData();
 
         void OnExplosiveThrown(BasePlayer player, SupplySignal supply, ThrownWeapon thrown) => 
             HandleSupplySignal(player, supply);
@@ -161,10 +328,14 @@ namespace Oxide.Plugins
         
         static void CreateEntity<T>(string prefab, Vector3 position) where T : BaseEntity
         {
+            // Create entity based on given type.
             T entity = (T) GameManager.server.CreateEntity(prefab, position + Vector3.up * 100f);
-            
-            if (entity == null) return;
-            
+
+            if (entity == null)
+            {
+                return;
+            }
+
             entity.Spawn();
             entity.GetOrAddComponent<CustomVehicleDrop>();
             entity.SetFlag(BaseEntity.Flags.On, true);
@@ -176,7 +347,7 @@ namespace Oxide.Plugins
         void HandleSupplySignal(BasePlayer player, SupplySignal supply)
         {
             // Find drop config if skin id matches.
-            DropConfig dropConfig = FindDropConfig(supply.skinID);
+            DropConfig dropConfig = _config.FindDropBySkin(supply.skinID);
             
             if (dropConfig == null) return;
             
@@ -191,7 +362,57 @@ namespace Oxide.Plugins
             supply.SetFlag(BaseEntity.Flags.On, true);
             supply.SendNetworkUpdateImmediate();
 
-            player.ChatMessage(GetLang("MessageDropped", player.UserIDString, dropConfig.DisplayName));
+            MessagePlayer(player, "Message.Dropped", dropConfig.Name);
+        }
+
+        void CreateSupplySignal(BasePlayer player, string name)
+        {
+            DropConfig dropConfig = _config.FindDropByName(name);
+            
+            if (dropConfig == null)
+            {
+                MessagePlayer(player, "Error.NotFound");
+                return;
+            }
+            
+            PlayerData playerData = _storage.FindPlayerData(player);
+
+            if (playerData.HasReachedLimit(dropConfig.Name, dropConfig.Limit))
+            {
+                MessagePlayer(player, "Message.Limit");
+                return;
+            }
+            
+            if (playerData.GetCooldown(dropConfig.Name) > 0)
+            {
+                MessagePlayer(player, "Message.Cooldown", FormatTime(playerData.GetCooldown(dropConfig.Name)));
+                return;
+            }
+
+            if (!dropConfig.CreateSupply(player))
+            {
+                MessagePlayer(player, "Message.Failed");
+                return;
+            }
+
+            playerData.OnClaimed(dropConfig);
+            
+            MessagePlayer(player, "Message.Give", dropConfig.Name);
+        }
+
+        string FormatTime(double time)
+        {
+            TimeSpan dateDifference = TimeSpan.FromSeconds(time);
+            int days = dateDifference.Days;
+            int hours = dateDifference.Hours;
+            int mins = dateDifference.Minutes;
+            int secs = dateDifference.Seconds;
+
+            if (days > 0) return $"~{days:00}d:{hours:00}h";
+            if (hours > 0) return $"~{hours:00}h:{mins:00}m";
+            if (mins > 0) return $"{mins:00}m:{secs:00}s";
+
+            return $"{secs}s";
         }
         
         class CustomVehicleDrop : MonoBehaviour
@@ -254,22 +475,31 @@ namespace Oxide.Plugins
 
         #endregion
 
-        #region API
-
-        object CreateDrop(BasePlayer player, ulong skinID, int amount = 1)
+        #region Command
+        
+        void GiveCommand(IPlayer player, string command, string[] args)
         {
-            DropConfig dropConfig = FindDropConfig(skinID);
-            if (dropConfig == null) return null;
+            if (args.Length == 0)
+            {
+                MessagePlayer(player, "Message.Syntax", string.Join("\n", _config.DropTypesByName.Keys));
+                return;
+            }
 
-            Item item = ItemManager.CreateByName("supply.signal", amount, skinID);
-            item.name = dropConfig.DisplayName;
-            item.MarkDirty();
-            
-            player.GiveItem(item);
-            
-            return true;
+            CreateSupplySignal(player.ToBasePlayer(), string.Join(" ", args));
         }
 
         #endregion
     }
+
+    #region VehicleDropEx
+
+    namespace VehicleDropEx
+    {
+        public static class PlayerEx
+        {
+            public static BasePlayer ToBasePlayer(this IPlayer player) => player?.Object as BasePlayer;
+        }
+    }
+
+    #endregion
 }
