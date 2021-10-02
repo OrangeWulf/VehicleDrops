@@ -21,6 +21,7 @@ namespace Oxide.Plugins
         private const string PARACHUTE_PREFAB = "assets/prefabs/misc/parachute/parachute.prefab";
         private const string SCRAP_HELICOPTER_PREFAB = "assets/content/vehicles/scrap heli carrier/scraptransporthelicopter.prefab";
         private const string MINICOPTER_PREFAB = "assets/content/vehicles/minicopter/minicopter.entity.prefab";
+        private const string CAR_PREFAB = "assets/content/vehicles/modularcar/2module_car_spawned.entity.prefab";
         private const string BOAT_PREFAB = "assets/content/vehicles/boats/rowboat/rowboat.prefab";
         private const string RHIB_PREFAB = "assets/content/vehicles/boats/rhib/rhib.prefab";
 
@@ -44,7 +45,8 @@ namespace Oxide.Plugins
             ScrapHelicopter = 0,
             Minicopter = 1,
             Boat = 2,
-            Rhib = 4
+            Rhib = 3,
+            Car = 4
         }
 
         #endregion
@@ -95,7 +97,8 @@ namespace Oxide.Plugins
                         new DropConfig("Scrap", 2144547783, DropType.ScrapHelicopter),
                         new DropConfig("Mini", 2144524645, DropType.Minicopter),
                         new DropConfig("Boat", 2144555007, DropType.Boat),
-                        new DropConfig("Rhib", 2144558893, DropType.Rhib)
+                        new DropConfig("Rhib", 2144558893, DropType.Rhib),
+                        new DropConfig("Car", 2144560388, DropType.Car),
                     }
                 };
             }
@@ -127,16 +130,18 @@ namespace Oxide.Plugins
         class DropConfig
         {
             public string Name;
-            public DropType DropType;
             public float Cooldown;
             public int Limit;
+            public int Tier;
             public ulong SkinID;
+            public DropType DropType;
 
             public DropConfig(string name, ulong skinID, DropType dropType)
             {
                 Name = name;
                 DropType = dropType;
                 SkinID = skinID;
+                Tier = 1;
                 Limit = 5;
                 Cooldown = 600f;
             }
@@ -167,6 +172,25 @@ namespace Oxide.Plugins
                         break;
                     case DropType.Rhib:
                         CreateEntity<MotorRowboat>(RHIB_PREFAB, position);
+                        break;
+                    case DropType.Car:
+                        ModularCar modularCar = CreateEntity<ModularCar>(CAR_PREFAB, position);
+                        
+                        Interface.Oxide.NextTick(() =>
+                        {
+                            if (Tier < 1) return;
+                            
+                            if (modularCar.IsDead()) return;
+                            
+                            modularCar.SetHealth(modularCar.MaxHealth());
+
+                            foreach (BaseVehicleModule moduleEntity in modularCar.AttachedModuleEntities)
+                            {
+                                moduleEntity.AdminFixUp(Tier);
+                            }
+                            
+                            modularCar.SendNetworkUpdate();
+                        });
                         break;
                     default:
                         throw new ArgumentOutOfRangeException();
@@ -287,7 +311,7 @@ namespace Oxide.Plugins
                 { "Message.Prefix", "</color><color=#03cffc>VehicleDrops</color>: " },
                 { "Message.Syntax", "<color=#e2e2e2>Invalid syntax, /vdrop <type>\n{0}.</color>" },
                 { "Message.Limit", "<color=#e2e2e2>Sorry, limit reached.</color>" },
-                { "Message.Dropped", "<color=#e2e2e2></color><color=#03cffc>{0}</color> has been dropped at your location.</color>" },
+                { "Message.Dropped", "<color=#e2e2e2></color><color=#ffc55c>{0}</color> has been dropped at your location.</color>" },
                 { "Message.Cooldown", "<color=#e2e2e2>Sorry, you are on cooldown <color=#ffc55c>{0}</color>.</color>" },
                 { "Message.Give", "<color=#e2e2e2>You received a <color=#ffc55c>{0}</color>.</color>" },
                 { "Error.Failed", "<color=#e2e2e2>Failed to give <color=#ffc55c>{0}</color>.</color>" },
@@ -328,14 +352,14 @@ namespace Oxide.Plugins
         
         #region Vehicle Drop
         
-        static void CreateEntity<T>(string prefab, Vector3 position) where T : BaseEntity
+        static T CreateEntity<T>(string prefab, Vector3 position) where T : BaseEntity
         {
             // Create entity based on given type.
             T entity = (T) GameManager.server.CreateEntity(prefab, position + Vector3.up * 100f);
 
             if (entity == null)
             {
-                return;
+                return null;
             }
 
             entity.Spawn();
@@ -344,6 +368,8 @@ namespace Oxide.Plugins
             entity.SendNetworkUpdateImmediate();
             
             EffectNetwork.Send(new Effect(FIRED_PREFAB, entity, 0, Vector3.zero, Vector3.zero));
+
+            return entity;
         }
         
         void HandleSupplySignal(BasePlayer player, SupplySignal supply)
@@ -449,7 +475,7 @@ namespace Oxide.Plugins
             bool HasLanded()
             {
                 return _vehicle.WaterFactor() >= 0.5f || 
-                       Physics.OverlapSphereNonAlloc(transform.position, 2.5f, Vis.colBuffer, CollisionLayer) != 0;
+                       Physics.OverlapSphereNonAlloc(transform.position, 0.5f, Vis.colBuffer, CollisionLayer) != 0;
             }
             
             void CreateParachute()
