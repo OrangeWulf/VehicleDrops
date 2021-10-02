@@ -151,6 +151,9 @@ namespace Oxide.Plugins
                 Item item = ItemManager.CreateByName("supply.signal", 1, SkinID);
 
                 if (item == null) return false;
+
+                item.name = Name;
+                item.MarkDirty();
                 
                 player.GiveItem(item);
 
