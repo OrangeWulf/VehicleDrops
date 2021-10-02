@@ -14,6 +14,8 @@ namespace Oxide.Plugins
     public class VehicleDrops : CovalencePlugin
     {
         #region Fields
+
+        private const string PERM_USE = "vehicledrops.use";
         
         private const string FIRED_PREFAB = "assets/prefabs/npc/m2bradley/effects/maincannonattack.prefab";
         private const string PARACHUTE_PREFAB = "assets/prefabs/misc/parachute/parachute.prefab";
@@ -305,7 +307,7 @@ namespace Oxide.Plugins
 
         void OnServerInitialized()
         {
-            AddCovalenceCommand("vdrop", nameof(GiveCommand));
+            AddCovalenceCommand("vdrop", nameof(GiveCommand), PERM_USE);
             
             LoadData();
             
