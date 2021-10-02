@@ -80,6 +80,8 @@ namespace Oxide.Plugins
 
         class PluginConfig
         {
+            public string Command = "vdrop";
+            
             public HashSet<DropConfig> DropConfigs = new HashSet<DropConfig>();
 
             [JsonIgnore]
@@ -343,7 +345,7 @@ namespace Oxide.Plugins
 
         void OnServerInitialized()
         {
-            AddCovalenceCommand("vdrop", nameof(GiveCommand), PERM_USE);
+            AddCovalenceCommand(_config.Command, nameof(GiveCommand), PERM_USE);
             
             LoadData();
             
