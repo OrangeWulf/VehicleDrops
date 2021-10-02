@@ -85,10 +85,10 @@ namespace Oxide.Plugins
             public HashSet<DropConfig> DropConfigs = new HashSet<DropConfig>();
 
             [JsonIgnore]
-            public readonly Dictionary<string, DropConfig> DropTypesByName = new Dictionary<string, DropConfig>();
+            public readonly Dictionary<string, DropConfig> DropsByName = new Dictionary<string, DropConfig>();
             
             [JsonIgnore]
-            public readonly Dictionary<ulong, DropConfig> DropTypesBySkin = new Dictionary<ulong, DropConfig>();
+            public readonly Dictionary<ulong, DropConfig> DropsBySkin = new Dictionary<ulong, DropConfig>();
             
             public static PluginConfig DefaultConfig()
             {
@@ -109,23 +109,21 @@ namespace Oxide.Plugins
             {
                 foreach (DropConfig drop in DropConfigs)
                 {
-                    DropTypesByName.Add(drop.Name, drop);
-                    DropTypesBySkin.Add(drop.SkinID, drop);
+                    DropsByName.Add(drop.Name, drop);
+                    DropsBySkin.Add(drop.SkinID, drop);
                 }
             }
             
             public DropConfig FindDropByName(string name)
             {
                 DropConfig dropConfig;
-
-                return DropTypesByName.TryGetValue(name, out dropConfig) ? dropConfig : null;
+                return DropsByName.TryGetValue(name, out dropConfig) ? dropConfig : null;
             }
             
             public DropConfig FindDropBySkin(ulong skin)
             {
                 DropConfig dropConfig;
-
-                return DropTypesBySkin.TryGetValue(skin, out dropConfig) ? dropConfig : null;
+                return DropsBySkin.TryGetValue(skin, out dropConfig) ? dropConfig : null;
             }
         }
 
@@ -151,7 +149,6 @@ namespace Oxide.Plugins
             public bool CreateSupply(BasePlayer player)
             {
                 Item item = ItemManager.CreateByName("supply.signal", 1, SkinID);
-
                 if (item == null) return false;
 
                 item.name = Name;
@@ -370,11 +367,7 @@ namespace Oxide.Plugins
         {
             // Create entity based on given type.
             T entity = (T) GameManager.server.CreateEntity(prefab, position + Vector3.up * 100f);
-
-            if (entity == null)
-            {
-                return null;
-            }
+            if (entity == null) return null;
 
             entity.Spawn();
             entity.GetOrAddComponent<CustomVehicleDrop>();
@@ -477,7 +470,6 @@ namespace Oxide.Plugins
                 if (_vehicle.IsValid() == true && !HasLanded())
                 {
                     _vehicle.transform.position -= new Vector3(0, 10f * Time.deltaTime, 0);
-                    
                     return;
                 }
 
@@ -525,7 +517,7 @@ namespace Oxide.Plugins
             
             if (args.Length == 0)
             {
-                MessagePlayer(player, "Message.Syntax", string.Join("\n", _config.DropTypesByName.Keys));
+                MessagePlayer(player, "Message.Syntax", string.Join("\n", _config.DropsByName.Keys));
                 return;
             }
 
@@ -535,8 +527,6 @@ namespace Oxide.Plugins
         #endregion
     }
 
-    #region VehicleDropEx
-
     namespace VehicleDropEx
     {
         public static class PlayerEx
@@ -544,6 +534,4 @@ namespace Oxide.Plugins
             public static BasePlayer ToBasePlayer(this IPlayer player) => player?.Object as BasePlayer;
         }
     }
-
-    #endregion
 }
