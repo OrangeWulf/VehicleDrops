@@ -519,6 +519,8 @@ namespace Oxide.Plugins
         
         void GiveCommand(IPlayer player, string command, string[] args)
         {
+            if (player.IsServer) return;
+            
             if (args.Length == 0)
             {
                 MessagePlayer(player, "Message.Syntax", string.Join("\n", _config.DropTypesByName.Keys));
